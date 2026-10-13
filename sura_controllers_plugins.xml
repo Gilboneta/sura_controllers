@@ -56,6 +56,13 @@
   </class>
 
   <class
+    name="sura_controllers/auv/SimpleObserverController"
+    type="sura_controllers::auv::SimpleObserverController"
+    base_class_type="controller_interface::ControllerInterface">
+    <description> Simple AUV state observer without DVL</description>
+  </class>
+
+  <class
     name="sura_controllers/usv/BodyForceController"
     type="sura_controllers::common::BodyForceController"
     base_class_type="controller_interface::ChainableControllerInterface">

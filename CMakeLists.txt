@@ -39,6 +39,7 @@ add_library(${PROJECT_NAME} SHARED
   src/auv_controllers/state_observer_controller.cpp
   src/auv_controllers/state_observer_model.cpp
   src/auv_controllers/stabilize_controller.cpp
+  src/auv_controllers/simple_observer_controller.cpp
   src/common_controllers/body_force_controller.cpp
   src/usv_controllers/position_hold_controller.cpp
   src/usv_controllers/body_velocity_controller.cpp
