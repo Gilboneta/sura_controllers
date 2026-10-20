@@ -71,11 +71,13 @@ private:
     realtime_tools::RealtimePublisher<OdometryMsg>>
     predicted_odometry_rt_pub_;
 
+
   realtime_tools::RealtimeBuffer<
     std::shared_ptr<NavigatorMsg>> navigator_buffer_;
 
   realtime_tools::RealtimeBuffer<
     std::shared_ptr<WrenchMsg>> force_buffer_;
+
 
   ObserverState state_;
 

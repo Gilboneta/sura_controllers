@@ -54,7 +54,6 @@ controller_interface::CallbackReturn SimpleObserverController::on_init()
     auto_declare<double>("weight", 112.8);
     auto_declare<double>("buoyancy", 121.3);
     auto_declare<double>("max_dt", 0.1);
-
     auto_declare<std::vector<double>>(
       "mass", {150.0, 150.0, 210.0, 0.28, 0.28, 0.28});
     auto_declare<std::vector<double>>(
@@ -107,7 +106,6 @@ controller_interface::CallbackReturn SimpleObserverController::on_configure(
   max_dt_ = std::max(
     1e-6,
     get_node()->get_parameter("max_dt").as_double());
-
   if (
     navigator_topic_.empty() ||
     force_topic_.empty() ||
@@ -237,6 +235,7 @@ controller_interface::return_type SimpleObserverController::update(
   }
 
   predictState(dt);
+
   publishState(time);
 
   return controller_interface::return_type::OK;
@@ -322,8 +321,7 @@ void SimpleObserverController::predictState(double dt)
       quadratic_damping_(index) * std::abs(velocity) * velocity;
 
     const double acceleration =
-      (wrench_(index) - damping_force - restoring_wrench_(index)) /
-      mass_(index);
+      (wrench_(index) - damping_force - restoring_wrench_(index)) / mass_(index);
 
     state_.body_velocity(index) += acceleration * dt;
   }
