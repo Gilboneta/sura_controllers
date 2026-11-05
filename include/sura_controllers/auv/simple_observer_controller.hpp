@@ -10,6 +10,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "controller_interface/controller_interface.hpp" //Para crear un controlador de ROS2
+#include "geometry_msgs/msg/accel_stamped.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "geometry_msgs/msg/wrench.hpp"
 #include "nav_msgs/msg/odometry.hpp"
@@ -42,6 +43,7 @@ public:
 private:
   using NavigatorMsg = sura_msgs::msg::Navigator;
   using ArucoPoseMsg = geometry_msgs::msg::PoseWithCovarianceStamped;
+  using AccelStampedMsg = geometry_msgs::msg::AccelStamped;
   using WrenchMsg = geometry_msgs::msg::Wrench;
   using OdometryMsg = nav_msgs::msg::Odometry;
   using Vector6 = Eigen::Matrix<double, 6, 1>;
@@ -69,15 +71,19 @@ private:
   void predictState(double dt);
   void enforceTankLimits();
   void publishState(const rclcpp::Time & stamp);
+  void publishPredictedAcceleration(const rclcpp::Time & stamp);
 
   rclcpp::Subscription<NavigatorMsg>::SharedPtr navigator_sub_;
   rclcpp::Subscription<ArucoPoseMsg>::SharedPtr aruco_pose_sub_;
   rclcpp::Subscription<WrenchMsg>::SharedPtr force_sub_;
   rclcpp::Publisher<OdometryMsg>::SharedPtr predicted_odometry_pub_;
+  rclcpp::Publisher<AccelStampedMsg>::SharedPtr predicted_acceleration_pub_;
 
   std::shared_ptr<
     realtime_tools::RealtimePublisher<OdometryMsg>>
     predicted_odometry_rt_pub_;
+  std::shared_ptr<realtime_tools::RealtimePublisher<AccelStampedMsg>>
+    predicted_acceleration_rt_pub_;
 
 
   realtime_tools::RealtimeBuffer<
@@ -94,6 +100,7 @@ private:
 
   Vector6 wrench_{Vector6::Zero()};
   Vector6 restoring_wrench_{Vector6::Zero()};
+  Vector6 predicted_acceleration_{Vector6::Zero()};
 
   Vector6 mass_{Vector6::Zero()};
   Vector6 linear_damping_{Vector6::Zero()};
@@ -117,6 +124,7 @@ private:
   std::string aruco_pose_topic_;
   std::string force_topic_;
   std::string predicted_odometry_topic_;
+  std::string predicted_acceleration_topic_;
   std::string world_frame_id_;
   std::string base_frame_id_;
 

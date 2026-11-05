@@ -72,6 +72,9 @@ controller_interface::CallbackReturn SimpleObserverController::on_init()
     auto_declare<std::string>(
       "predicted_odometry_topic",
       "simple_observer/predicted_odometry");
+    auto_declare<std::string>(
+      "predicted_acceleration_topic",
+      "simple_observer/predicted_acceleration");
     auto_declare<std::string>("world_frame_id", "world_ned");
     auto_declare<std::string>("base_frame_id", "");
 
@@ -127,6 +130,8 @@ controller_interface::CallbackReturn SimpleObserverController::on_configure(
     get_node()->get_parameter("force_topic").as_string();
   predicted_odometry_topic_ =
     get_node()->get_parameter("predicted_odometry_topic").as_string();
+  predicted_acceleration_topic_ =
+    get_node()->get_parameter("predicted_acceleration_topic").as_string();
   world_frame_id_ =
     get_node()->get_parameter("world_frame_id").as_string();
   base_frame_id_ =
@@ -144,12 +149,14 @@ controller_interface::CallbackReturn SimpleObserverController::on_configure(
     navigator_topic_.empty() ||
     aruco_pose_topic_.empty() ||
     force_topic_.empty() ||
-    predicted_odometry_topic_.empty())
+    predicted_odometry_topic_.empty() ||
+    predicted_acceleration_topic_.empty())
   {
     RCLCPP_ERROR(
       get_node()->get_logger(),
       "SimpleObserverController requires navigator_topic, "
-      "aruco_pose_topic, force_topic and predicted_odometry_topic");
+      "aruco_pose_topic, force_topic, predicted_odometry_topic and "
+      "predicted_acceleration_topic");
     return controller_interface::CallbackReturn::ERROR;
   }
 
@@ -252,6 +259,13 @@ controller_interface::CallbackReturn SimpleObserverController::on_configure(
     std::make_shared<realtime_tools::RealtimePublisher<OdometryMsg>>(
     predicted_odometry_pub_);
 
+  predicted_acceleration_pub_ =
+    get_node()->create_publisher<AccelStampedMsg>(
+    predicted_acceleration_topic_, rclcpp::SystemDefaultsQoS());
+  predicted_acceleration_rt_pub_ =
+    std::make_shared<realtime_tools::RealtimePublisher<AccelStampedMsg>>(
+    predicted_acceleration_pub_);
+
   resetState();
 
   RCLCPP_INFO(get_node()->get_logger(), "Configured SimpleObserverController");
@@ -259,6 +273,9 @@ controller_interface::CallbackReturn SimpleObserverController::on_configure(
   RCLCPP_INFO(get_node()->get_logger(), "aruco_pose_topic: %s", aruco_pose_topic_.c_str());
   RCLCPP_INFO(get_node()->get_logger(), "force_topic: %s", force_topic_.c_str());
   RCLCPP_INFO(get_node()->get_logger(), "predicted_odometry_topic: %s", predicted_odometry_topic_.c_str());
+  RCLCPP_INFO(
+    get_node()->get_logger(), "predicted_acceleration_topic: %s",
+    predicted_acceleration_topic_.c_str());
   RCLCPP_INFO(get_node()->get_logger(), "world_frame_id: %s", world_frame_id_.c_str());
   RCLCPP_INFO(get_node()->get_logger(), "base_frame_id: %s", base_frame_id_.c_str());
   RCLCPP_INFO(
@@ -416,6 +433,7 @@ void SimpleObserverController::resetState()
 
   wrench_.setZero();
   restoring_wrench_.setZero();
+  predicted_acceleration_.setZero();
 }
 
 void SimpleObserverController::predictState(double dt)
@@ -448,6 +466,8 @@ void SimpleObserverController::predictState(double dt)
 
     const double acceleration =
       (wrench_(index) - damping_force - restoring_wrench_(index)) / mass_(index);
+
+    predicted_acceleration_(index) = acceleration;
 
     state_.body_velocity(index) += acceleration * dt;
   }
@@ -542,6 +562,26 @@ void SimpleObserverController::publishState(const rclcpp::Time & stamp)
     predicted_odometry_rt_pub_->msg_ = odometry_msg;
     predicted_odometry_rt_pub_->unlockAndPublish();
   }
+
+  publishPredictedAcceleration(stamp);
+}
+
+void SimpleObserverController::publishPredictedAcceleration(const rclcpp::Time & stamp)
+{
+  if (!predicted_acceleration_rt_pub_ || !predicted_acceleration_rt_pub_->trylock()) {
+    return;
+  }
+
+  auto & msg = predicted_acceleration_rt_pub_->msg_;
+  msg.header.stamp = stamp;
+  msg.header.frame_id = base_frame_id_;
+  msg.accel.linear.x = predicted_acceleration_(0);
+  msg.accel.linear.y = predicted_acceleration_(1);
+  msg.accel.linear.z = predicted_acceleration_(2);
+  msg.accel.angular.x = predicted_acceleration_(3);
+  msg.accel.angular.y = predicted_acceleration_(4);
+  msg.accel.angular.z = predicted_acceleration_(5);
+  predicted_acceleration_rt_pub_->unlockAndPublish();
 }
 
 }  // namespace sura_controllers::auv
