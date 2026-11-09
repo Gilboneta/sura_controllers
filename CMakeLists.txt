@@ -34,6 +34,7 @@ find_package(visualization_msgs REQUIRED)
 add_library(${PROJECT_NAME} SHARED
   src/auv_controllers/body_velocity_controller.cpp
   src/auv_controllers/depth_hold_controller.cpp
+  src/auv_controllers/force_contact_controller.cpp
   src/auv_controllers/mpc_4dof_controller.cpp
   src/auv_controllers/position_hold_controller.cpp
   src/auv_controllers/state_observer_controller.cpp
@@ -153,4 +154,3 @@ ament_export_dependencies(
 )
 
 ament_package()
-
