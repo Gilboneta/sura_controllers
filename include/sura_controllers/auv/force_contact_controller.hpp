@@ -74,6 +74,10 @@ private:
   double max_input_age_{0.15};
   double max_pair_time_offset_{0.05};
   double max_observer_dt_{0.1};
+  double external_wrench_filter_alpha_{0.1};
+
+  bool have_filtered_external_wrench_{false};
+  Vector6 filtered_external_wrench_{Vector6::Zero()};
 
   rclcpp::Subscription<NavigatorMsg>::SharedPtr navigator_sub_;
   rclcpp::Subscription<OdometryMsg>::SharedPtr predicted_odometry_sub_;
@@ -94,3 +98,4 @@ private:
 };
 
 }  // namespace sura_controllers::auv
+

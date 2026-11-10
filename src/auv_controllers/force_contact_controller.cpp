@@ -32,6 +32,7 @@ controller_interface::CallbackReturn ForceContactController::on_init()
     auto_declare<double>("max_input_age", 0.15);
     auto_declare<double>("max_pair_time_offset", 0.05);
     auto_declare<double>("max_observer_dt", 0.1);
+    auto_declare<double>("external_wrench_filter_alpha", 0.1);
 
     // Keep the effective inertia of the CURRENT ForceContactController.
     auto_declare<std::vector<double>>(
@@ -79,6 +80,8 @@ controller_interface::CallbackReturn ForceContactController::on_configure(
   max_pair_time_offset_ =
     std::max(0.0, node->get_parameter("max_pair_time_offset").as_double());
   max_observer_dt_ = node->get_parameter("max_observer_dt").as_double();
+  external_wrench_filter_alpha_ =
+    node->get_parameter("external_wrench_filter_alpha").as_double();
   weight_ = node->get_parameter("weight").as_double();
   buoyancy_ = node->get_parameter("buoyancy").as_double();
 
@@ -101,7 +104,10 @@ controller_interface::CallbackReturn ForceContactController::on_configure(
   if (!finiteVector(external_wrench_bias_) || !finiteVector(linear_damping_) ||
     !finiteVector(quadratic_damping_) || !water_current_ned_.allFinite() ||
     !std::isfinite(weight_) || !std::isfinite(buoyancy_) ||
-    !std::isfinite(max_observer_dt_) || max_observer_dt_ <= 0.0)
+    !std::isfinite(max_observer_dt_) || max_observer_dt_ <= 0.0 ||
+    !std::isfinite(external_wrench_filter_alpha_) ||
+    external_wrench_filter_alpha_ <= 0.0 ||
+    external_wrench_filter_alpha_ > 1.0)
   {
     RCLCPP_ERROR(node->get_logger(), "Invalid dynamic parameters");
     return controller_interface::CallbackReturn::ERROR;
@@ -245,7 +251,19 @@ controller_interface::return_type ForceContactController::update(
   if (!finiteVector(external_wrench)) {
     return controller_interface::return_type::OK;
   }
-  publishWrench(now, external_wrench);
+
+  // First-order exponential low-pass filter (EMA).
+  // alpha is the weight of the new raw wrench. Smaller alpha means more
+  // smoothing and more delay; alpha = 1.0 disables the filter.
+  if (!have_filtered_external_wrench_) {
+    filtered_external_wrench_.setZero();
+    have_filtered_external_wrench_ = true;
+  }
+  filtered_external_wrench_ =
+    external_wrench_filter_alpha_ * external_wrench +
+    (1.0 - external_wrench_filter_alpha_) * filtered_external_wrench_;
+
+  publishWrench(now, filtered_external_wrench_);
   last_prediction_stamp_ns_ = odom_stamp_ns;
   last_processed_prediction_stamp_ns_ = odom_stamp_ns;
   return controller_interface::return_type::OK;
@@ -376,6 +394,8 @@ void ForceContactController::resetEstimator()
 {
   last_prediction_stamp_ns_ = 0;
   last_processed_prediction_stamp_ns_ = 0;
+  have_filtered_external_wrench_ = false;
+  filtered_external_wrench_.setZero();
 }
 
 void ForceContactController::publishWrench(const rclcpp::Time & stamp, const Vector6 & wrench)
@@ -400,3 +420,4 @@ void ForceContactController::publishWrench(const rclcpp::Time & stamp, const Vec
 PLUGINLIB_EXPORT_CLASS(
   sura_controllers::auv::ForceContactController,
   controller_interface::ControllerInterface)
+
