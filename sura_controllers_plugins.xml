@@ -42,6 +42,13 @@
   </class>
 
   <class
+    name="sura_controllers/auv/PositionAdmittanceController"
+    type="sura_controllers::auv::PositionAdmittanceController"
+    base_class_type="controller_interface::ChainableControllerInterface">
+    <description>AUV position-force admittance controller publishing body velocity setpoints</description>
+  </class>
+
+  <class
     name="sura_controllers/auv/StateObserverController"
     type="sura_controllers::auv::StateObserverController"
     base_class_type="controller_interface::ControllerInterface">

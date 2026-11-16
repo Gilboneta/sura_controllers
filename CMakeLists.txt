@@ -36,6 +36,7 @@ add_library(${PROJECT_NAME} SHARED
   src/auv_controllers/depth_hold_controller.cpp
   src/auv_controllers/force_contact_controller.cpp
   src/auv_controllers/mpc_4dof_controller.cpp
+  src/auv_controllers/position_admittance_controller.cpp
   src/auv_controllers/position_hold_controller.cpp
   src/auv_controllers/state_observer_controller.cpp
   src/auv_controllers/state_observer_model.cpp
