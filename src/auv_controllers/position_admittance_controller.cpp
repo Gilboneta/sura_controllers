@@ -472,7 +472,7 @@ controller_interface::return_type PositionAdmittanceController::update_and_write
       publishZeroCommand();
       return controller_interface::return_type::OK;
     }
-    force_error = target_force - measured_force;
+    force_error = target_force + measured_force;
   } else {
     // During POSITIONING, or when no wrench target exists, use pure position
     // control and do not retain a previous admittance correction.
