@@ -21,6 +21,7 @@
 #include "std_msgs/msg/float64_multi_array.hpp"
 #include "sura_msgs/msg/auv_controller_set_point.hpp"
 #include "sura_msgs/msg/navigator.hpp"
+#include "sura_msgs/msg/sura_velocity_command.hpp"
 
 namespace sura_controllers::auv
 {
@@ -35,6 +36,7 @@ public:
   using StateMsg = std_msgs::msg::Float64MultiArray;
   using PoseRpyMsg = sura_msgs::msg::AuvControllerSetPoint;
   using NavigatorMsg = sura_msgs::msg::Navigator;
+  using SuraVelocityCommandMsg = sura_msgs::msg::SuraVelocityCommand;
 
   controller_interface::CallbackReturn on_init() override;
 
@@ -114,10 +116,11 @@ private:
   rclcpp::Subscription<WrenchStampedMsg>::SharedPtr wrench_sub_;
 
   rclcpp::Publisher<TwistMsg>::SharedPtr output_pub_;
-  rclcpp::Publisher<TwistMsg>::SharedPtr body_velocity_setpoint_pub_;
+  rclcpp::Publisher<SuraVelocityCommandMsg>::SharedPtr arbitrator_velocity_pub_;
   rclcpp::Publisher<StateMsg>::SharedPtr state_pub_;
   std::shared_ptr<realtime_tools::RealtimePublisher<TwistMsg>> output_rt_pub_;
-  std::shared_ptr<realtime_tools::RealtimePublisher<TwistMsg>> body_velocity_setpoint_rt_pub_;
+  std::shared_ptr<realtime_tools::RealtimePublisher<SuraVelocityCommandMsg>>
+    arbitrator_velocity_rt_pub_;
   std::shared_ptr<realtime_tools::RealtimePublisher<StateMsg>> state_rt_pub_;
 
   realtime_tools::RealtimeBuffer<std::shared_ptr<PoseStampedMsg>> target_pose_buffer_;
@@ -132,7 +135,10 @@ private:
   std::string navigator_topic_;
   std::string external_wrench_topic_;
   std::string output_topic_;
-  std::string body_velocity_setpoint_topic_;
+  std::string arbitrator_velocity_topic_;
+  std::string arbitrator_requester_;
+  std::string arbitrator_controller_;
+  int arbitrator_priority_{60};
   std::string state_topic_;
   std::string control_frame_id_;
   std::string target_pose_frame_id_;

@@ -42,7 +42,10 @@ controller_interface::CallbackReturn PositionAdmittanceController::on_init()
     auto_declare<std::string>("external_wrench_topic", "force_contact/wrench");
     auto_declare<std::string>("output_topic", "position_admittance/output");
     auto_declare<std::string>(
-      "body_velocity_setpoint_topic", "body_velocity/setpoint");
+      "arbitrator_velocity_topic", "controller/arbitrator/velocity");
+    auto_declare<std::string>("arbitrator_requester", "position_admittance");
+    auto_declare<std::string>("arbitrator_controller", "body_velocity");
+    auto_declare<int>("arbitrator_priority", 60);
     auto_declare<std::string>("state_topic", "position_admittance/state");
     auto_declare<std::string>("control_frame_id", "base_link");
     auto_declare<std::string>("target_pose_frame_id", "world_ned");
@@ -109,8 +112,11 @@ controller_interface::CallbackReturn PositionAdmittanceController::on_configure(
   navigator_topic_ = node->get_parameter("navigator_topic").as_string();
   external_wrench_topic_ = node->get_parameter("external_wrench_topic").as_string();
   output_topic_ = node->get_parameter("output_topic").as_string();
-  body_velocity_setpoint_topic_ =
-    node->get_parameter("body_velocity_setpoint_topic").as_string();
+  arbitrator_velocity_topic_ =
+    node->get_parameter("arbitrator_velocity_topic").as_string();
+  arbitrator_requester_ = node->get_parameter("arbitrator_requester").as_string();
+  arbitrator_controller_ = node->get_parameter("arbitrator_controller").as_string();
+  arbitrator_priority_ = node->get_parameter("arbitrator_priority").as_int();
   state_topic_ = node->get_parameter("state_topic").as_string();
   control_frame_id_ = node->get_parameter("control_frame_id").as_string();
   target_pose_frame_id_ = node->get_parameter("target_pose_frame_id").as_string();
@@ -118,8 +124,10 @@ controller_interface::CallbackReturn PositionAdmittanceController::on_configure(
 
   if (target_pose_rpy_topic_.empty() || target_wrench_topic_.empty() ||
     navigator_topic_.empty() || external_wrench_topic_.empty() || output_topic_.empty() ||
-    body_velocity_setpoint_topic_.empty() || state_topic_.empty() ||
-    control_frame_id_.empty() || target_pose_frame_id_.empty())
+    arbitrator_velocity_topic_.empty() || arbitrator_requester_.empty() ||
+    arbitrator_controller_.empty() || state_topic_.empty() ||
+    control_frame_id_.empty() || target_pose_frame_id_.empty() ||
+    arbitrator_priority_ < 1 || arbitrator_priority_ > 100)
   {
     RCLCPP_ERROR(node->get_logger(), "PositionAdmittanceController has an empty topic or frame");
     return controller_interface::CallbackReturn::ERROR;
@@ -195,18 +203,18 @@ controller_interface::CallbackReturn PositionAdmittanceController::on_configure(
   output_pub_ = node->create_publisher<TwistMsg>(output_topic_, rclcpp::SystemDefaultsQoS());
   output_rt_pub_ = std::make_shared<realtime_tools::RealtimePublisher<TwistMsg>>(output_pub_);
 
-  body_velocity_setpoint_pub_ = node->create_publisher<TwistMsg>(
-    body_velocity_setpoint_topic_, rclcpp::SystemDefaultsQoS());
-  body_velocity_setpoint_rt_pub_ =
-    std::make_shared<realtime_tools::RealtimePublisher<TwistMsg>>(
-    body_velocity_setpoint_pub_);
+  arbitrator_velocity_pub_ = node->create_publisher<SuraVelocityCommandMsg>(
+    arbitrator_velocity_topic_, rclcpp::SystemDefaultsQoS());
+  arbitrator_velocity_rt_pub_ =
+    std::make_shared<realtime_tools::RealtimePublisher<SuraVelocityCommandMsg>>(
+    arbitrator_velocity_pub_);
 
   state_pub_ = node->create_publisher<StateMsg>(state_topic_, rclcpp::SystemDefaultsQoS());
   state_rt_pub_ = std::make_shared<realtime_tools::RealtimePublisher<StateMsg>>(state_pub_);
   state_rt_pub_->msg_.data.resize(24, 0.0);
 
   // These references make the controller chainable, but the normal connection
-  // in this architecture is the Twist topic consumed by BodyVelocityController.
+  // in this architecture is the velocity intent consumed by the arbitrator.
   reference_interface_names_ = {
     "velocity.x", "velocity.y", "velocity.z",
     "velocity.roll", "velocity.pitch", "velocity.yaw"
@@ -221,11 +229,13 @@ controller_interface::CallbackReturn PositionAdmittanceController::on_configure(
     node->get_logger(),
     "Configured PositionAdmittanceController: enabled=%s, target_pose_rpy='%s', "
     "target_wrench='%s', "
-    "navigator='%s', measured_wrench='%s', output='%s', position_tolerance=%.3f m, "
+    "navigator='%s', measured_wrench='%s', arbitrator_velocity='%s', "
+    "requester='%s', controller='%s', priority=%d, position_tolerance=%.3f m, "
     "orientation_tolerance=%.3f rad",
     enabled_.load(std::memory_order_relaxed) ? "true" : "false",
     target_pose_rpy_topic_.c_str(), target_wrench_topic_.c_str(), navigator_topic_.c_str(),
-    external_wrench_topic_.c_str(), body_velocity_setpoint_topic_.c_str(),
+    external_wrench_topic_.c_str(), arbitrator_velocity_topic_.c_str(),
+    arbitrator_requester_.c_str(), arbitrator_controller_.c_str(), arbitrator_priority_,
     parameters_.position_tolerance, parameters_.orientation_tolerance);
 
   return controller_interface::CallbackReturn::SUCCESS;
@@ -505,8 +515,9 @@ controller_interface::return_type PositionAdmittanceController::update_and_write
   }
 
   // 2) Corrected task pose: X_c = X_d + delta_X_adm.
-  // position_error is zero when no pose target exists, which gives a pure
-  // force/admittance controller in that case.
+  // In wrench-only mode position_error is zero, so the virtual admittance
+  // displacement still contributes to the commanded velocity, as in the
+  // original controller behavior.
   const Vector6 corrected_pose_error = position_error + admittance_position_;
 
   // 3) Internal position controller: X_c - X -> X_dot_position.
@@ -723,9 +734,14 @@ void PositionAdmittanceController::publishCommand(const TwistMsg & command)
     output_rt_pub_->msg_ = command;
     output_rt_pub_->unlockAndPublish();
   }
-  if (body_velocity_setpoint_rt_pub_ && body_velocity_setpoint_rt_pub_->trylock()) {
-    body_velocity_setpoint_rt_pub_->msg_ = command;
-    body_velocity_setpoint_rt_pub_->unlockAndPublish();
+  if (arbitrator_velocity_rt_pub_ && arbitrator_velocity_rt_pub_->trylock()) {
+    auto & message = arbitrator_velocity_rt_pub_->msg_;
+    message.header.stamp = get_node()->now();
+    message.requester = arbitrator_requester_;
+    message.controller = arbitrator_controller_;
+    message.priority = static_cast<uint8_t>(arbitrator_priority_);
+    message.velocity = command;
+    arbitrator_velocity_rt_pub_->unlockAndPublish();
   }
 }
 
